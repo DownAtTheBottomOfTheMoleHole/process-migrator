@@ -10,7 +10,7 @@ import { IWorkItemTrackingApi as WITApi_NOREQUIRE } from "azure-devops-node-api/
 
 import { PICKLIST_NO_ACTION } from "./Constants";
 import { Engine } from "./Engine";
-import { ImportError, ValidationError } from "./Errors";
+import { AggregateValidationError, ImportError, ValidationError } from "./Errors";
 import { ICommandLineOptions, IConfigurationFile, IDictionaryStringTo, IProcessPayload, IWITLayout, IWITRules, IWITStates, IRestClients } from "./Interfaces";
 import { logger } from "./Logger";
 import { Utility } from "./Utilities";
@@ -662,6 +662,7 @@ export class ProcessImporter {
         }
 
         payload.targetAccountInformation.collectionFields = currentFieldsOnTarget;
+        const fieldErrors: string[] = [];
         for (const sourceField of payload.fields) {
             const convertedSrcFieldType: number = Utility.WITProcessToWITFieldType(sourceField.type, sourceField.isIdentity);
             const conflictingFields: WITInterfaces.WorkItemField[] = currentFieldsOnTarget.filter(targetField =>
@@ -670,8 +671,11 @@ export class ProcessImporter {
                 && (!sourceField.isIdentity || !targetField.isIdentity)); // with exception if both are identity - known issue we export identity field type = string 
 
             if (conflictingFields.length > 0) {
-                throw new ValidationError(`Field in target Collection conflicts with '${sourceField.name}' field with a different reference name or type.`);
+                fieldErrors.push(`Field in target Collection conflicts with '${sourceField.name}' field with a different reference name or type.`);
             }
+        }
+        if (fieldErrors.length > 0) {
+            throw new AggregateValidationError(fieldErrors);
         }
     }
 
@@ -701,6 +705,7 @@ export class ProcessImporter {
 
         const fieldToPicklistIdMapping = payload.targetAccountInformation.fieldRefNameToPicklistId; // This is output for import picklist/field
         const currentTargetFieldToPicklist = await this._populatePicklistDictionary(payload.targetAccountInformation.collectionFields);
+        const picklistErrors: string[] = [];
 
         for (const picklistEntry of payload.witFieldPicklists) {
             const fieldRefName = picklistEntry.fieldRefName;
@@ -722,7 +727,7 @@ export class ProcessImporter {
 
                 if (conflict) {
                     if (!(this._config.options && this._config.options.overwritePicklist === true)) {
-                        throw new ValidationError(`Picklist field ${fieldRefName} exist on target account but have different items than source, set 'overwritePicklist' option to overwrite`);
+                        picklistErrors.push(`Picklist field ${fieldRefName} exist on target account but have different items than source, set 'overwritePicklist' option to overwrite`);
                     }
                     else {
                         fieldToPicklistIdMapping[fieldRefName] = currentTargetPicklist.id; // We will need to update the picklist later when import picklists
@@ -736,6 +741,9 @@ export class ProcessImporter {
                 // No-op, leave payload.targetAccountInformation.fieldRefNameToPicklistId[picklistEntry.fieldRefName] = undefined, which indicates creating new picklist.
             }
         }
+        if (picklistErrors.length > 0) {
+            throw new AggregateValidationError(picklistErrors);
+        }
     }
 
     private async _preImportValidation(payload: IProcessPayload): Promise<void> {
@@ -746,8 +754,33 @@ export class ProcessImporter {
         if (!this._commandLineOptions.overwriteProcessOnTarget) { // only validate if we are not cleaning up target
             await Engine.Task(() => this._validateProcess(payload), "Validate process existence on target account");
         }
-        await Engine.Task(() => this._validateFields(payload), "Validate fields on target account");
-        await Engine.Task(() => this._validatePicklists(payload), "Validate picklists on target account");
+
+        // Run field and picklist validation independently so all conflicts are surfaced in one run
+        const allValidationErrors: string[] = [];
+
+        try {
+            await Engine.Task(() => this._validateFields(payload), "Validate fields on target account");
+        } catch (error) {
+            if (error instanceof AggregateValidationError) {
+                allValidationErrors.push(...error.errors);
+            } else {
+                throw error;
+            }
+        }
+
+        try {
+            await Engine.Task(() => this._validatePicklists(payload), "Validate picklists on target account");
+        } catch (error) {
+            if (error instanceof AggregateValidationError) {
+                allValidationErrors.push(...error.errors);
+            } else {
+                throw error;
+            }
+        }
+
+        if (allValidationErrors.length > 0) {
+            throw new AggregateValidationError(allValidationErrors);
+        }
     }
 
     private async _deleteProcessOnTarget(targetProcessName: string) {
