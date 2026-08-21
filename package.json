@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/DownAtTheBottomOfTheMoleHole/process-migrator"
+    "url": "https://github.com/Microsoft/process-migrator"
   },
   "keywords": [
     "azure devops",
