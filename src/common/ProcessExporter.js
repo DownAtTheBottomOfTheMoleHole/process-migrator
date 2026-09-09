@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProcessExporter = void 0;
+const WITProcessDefinitionsInterfaces = __importStar(require("azure-devops-node-api/interfaces/WorkItemTrackingProcessDefinitionsInterfaces"));
 const WITProcessInterfaces = __importStar(require("azure-devops-node-api/interfaces/WorkItemTrackingProcessInterfaces"));
 const Errors_1 = require("./Errors");
 const Logger_1 = require("./Logger");
@@ -47,7 +48,7 @@ class ProcessExporter {
         this._witProcessDefinitionApi = restClients.witProcessDefinitionApi;
     }
     async _getSourceProcessId() {
-        const processes = await Utilities_1.Utility.tryCatchWithKnownError(() => this._witProcessApi.getProcesses(), () => new Errors_1.ExportError(`Error getting processes on source account '${this._config.sourceAccountUrl}, check account url, token and token permissions.`));
+        const processes = await Utilities_1.Utility.tryCatchWithKnownError(() => this._witProcessApi.getListOfProcesses(), () => new Errors_1.ExportError(`Error getting processes on source account '${this._config.sourceAccountUrl}, check account url, token and token permissions.`));
         if (!processes) {
             throw new Errors_1.ExportError(`Failed to get processes on source account '${this._config.sourceAccountUrl}', check account url.`);
         }
@@ -57,8 +58,8 @@ class ProcessExporter {
             throw new Errors_1.ExportError(`Process '${this._config.sourceProcessName}' is not found on source account.`);
         }
         const process = matchProcesses[0];
-        if (process.properties.class !== WITProcessInterfaces.ProcessClass.Derived) {
-            throw new Errors_1.ExportError(`Proces '${this._config.sourceProcessName}' is not a derived process, not supported.`);
+        if (process.customizationType !== WITProcessInterfaces.CustomizationType.Inherited) {
+            throw new Errors_1.ExportError(`Process '${this._config.sourceProcessName}' is not a derived process, not supported.`);
         }
         return process.typeId;
     }
@@ -75,10 +76,9 @@ class ProcessExporter {
         const knownPicklists = {};
         const _nonSystemWorkItemTypes = [];
         const processPromises = [];
-        processPromises.push(this._witProcessApi.getProcessById(processId).then(process => _process = process));
-        processPromises.push(this._witProcessApi.getFields(processId).then(fields => _fieldsCollectionScope = fields));
-        processPromises.push(this._witProcessApi.getBehaviors(processId).then(behaviors => _behaviorsCollectionScope = behaviors));
-        processPromises.push(this._witProcessApi.getWorkItemTypes(processId).then(workitemtypes => {
+        processPromises.push(this._witProcessApi.getProcessByItsId(processId).then(process => _process = process));
+        processPromises.push(this._witProcessApi.getProcessBehaviors(processId).then(behaviors => _behaviorsCollectionScope = behaviors));
+        processPromises.push(this._witProcessDefinitionApi.getWorkItemTypes(processId).then(workitemtypes => {
             const perWitPromises = [];
             for (const workitemtype of workitemtypes) {
                 const currentWitPromises = [];
@@ -90,7 +90,7 @@ class ProcessExporter {
                     };
                     _behaviorsWITypeScope.push(witBehaviors);
                 }));
-                if (workitemtype.class !== WITProcessInterfaces.WorkItemTypeClass.System) {
+                if (workitemtype.class !== WITProcessDefinitionsInterfaces.WorkItemTypeClass.System) {
                     _nonSystemWorkItemTypes.push(workitemtype);
                     currentWitPromises.push(this._witProcessDefinitionApi.getWorkItemTypeFields(processId, workitemtype.id).then(fields => {
                         const witFields = {
@@ -126,7 +126,7 @@ class ProcessExporter {
                         };
                         _states.push(witStates);
                     }));
-                    currentWitPromises.push(this._witProcessApi.getWorkItemTypeRules(processId, workitemtype.id).then(rules => {
+                    currentWitPromises.push(this._witProcessApi.getProcessWorkItemTypeRules(processId, workitemtype.id).then(rules => {
                         const witRules = {
                             workItemTypeRefName: workitemtype.id,
                             rules: rules
@@ -139,6 +139,23 @@ class ProcessExporter {
             return Promise.all(perWitPromises);
         }));
         await Promise.all(processPromises);
+        const seenFieldIds = new Set();
+        _fieldsCollectionScope = [];
+        for (const witFields of _fieldsWorkitemtypeScope) {
+            for (const f of witFields.fields) {
+                const refName = f.referenceName;
+                if (refName && !seenFieldIds.has(refName)) {
+                    seenFieldIds.add(refName);
+                    _fieldsCollectionScope.push({
+                        id: refName,
+                        name: f.name,
+                        type: f.type,
+                        isIdentity: f.type === WITProcessDefinitionsInterfaces.FieldType.Identity,
+                        url: f.url,
+                    });
+                }
+            }
+        }
         const processPayload = {
             process: _process,
             fields: _fieldsCollectionScope,
