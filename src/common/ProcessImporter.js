@@ -516,9 +516,9 @@ class ProcessImporter {
         }
         const targetProcesses = await Utilities_1.Utility.tryCatchWithKnownError(async () => {
             return await Engine_1.Engine.Task(() => this._witProcessApi.getListOfProcesses(), `Get processes on target account`);
-        }, () => new Errors_1.ValidationError("Failed to get processes on target acccount, check account url, token and token permission."));
+        }, () => new Errors_1.ValidationError("Failed to get processes on target account, check account url, token and token permissions."));
         if (!targetProcesses) {
-            throw new Errors_1.ValidationError("Failed to get processes on target acccount, check account url.");
+            throw new Errors_1.ValidationError("Failed to get processes on target account, check account url.");
         }
         for (const process of targetProcesses) {
             if (payload.process.name.toLowerCase() === process.name.toLowerCase()) {
