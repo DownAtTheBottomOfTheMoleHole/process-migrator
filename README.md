@@ -4,6 +4,10 @@ This application provides you the ability to automate the [Process](https://docs
 
 **NOTE:** This only works with 'Inherited Process'. For 'XML process' you may upload/download the process as a ZIP.
 
+## Repository Status
+
+This fork includes the upstream SDK/toolchain modernization (TypeScript 5 + `azure-devops-node-api` v17) and keeps usage/configuration guidance in this README aligned with this repository.
+
 ## Requirements
 
 - **Node.js 20 LTS or later** (Node 22/24 are also supported)
