@@ -48,7 +48,7 @@ class ProcessExporter {
         this._witProcessDefinitionApi = restClients.witProcessDefinitionApi;
     }
     async _getSourceProcessId() {
-        const processes = await Utilities_1.Utility.tryCatchWithKnownError(() => this._witProcessApi.getListOfProcesses(), () => new Errors_1.ExportError(`Error getting processes on source account '${this._config.sourceAccountUrl}, check account url, token and token permissions.`));
+        const processes = await Utilities_1.Utility.tryCatchWithKnownError(() => this._witProcessApi.getListOfProcesses(), () => new Errors_1.ExportError(`Error getting processes on source account '${this._config.sourceAccountUrl}', check account url, token and token permissions.`));
         if (!processes) {
             throw new Errors_1.ExportError(`Failed to get processes on source account '${this._config.sourceAccountUrl}', check account url.`);
         }
