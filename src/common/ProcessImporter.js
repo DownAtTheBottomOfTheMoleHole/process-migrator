@@ -362,13 +362,7 @@ class ProcessImporter {
     }
     async _importWITRule(rule, witRulesEntry, payload) {
         try {
-            const createRequest = {
-                name: rule.name,
-                actions: rule.actions,
-                conditions: rule.conditions,
-                isDisabled: rule.isDisabled
-            };
-            const createdRule = await Engine_1.Engine.Task(() => this._witProcessApi.addProcessWorkItemTypeRule(createRequest, payload.process.typeId, witRulesEntry.workItemTypeRefName), `Create rule '${rule.id}' in work item type '${witRulesEntry.workItemTypeRefName}'`);
+            const createdRule = await Engine_1.Engine.Task(() => this._witProcessApi.addWorkItemTypeRule(rule, payload.process.typeId, witRulesEntry.workItemTypeRefName), `Create rule '${rule.id}' in work item type '${witRulesEntry.workItemTypeRefName}'`);
             if (!createdRule || !createdRule.id) {
                 throw new Errors_1.ImportError(`Unable to create rule '${rule.id}' in work item type '${witRulesEntry.workItemTypeRefName}', server returned empty result or id.`);
             }
@@ -386,7 +380,7 @@ class ProcessImporter {
     async _importRules(payload) {
         for (const witRulesEntry of payload.rules) {
             for (const rule of witRulesEntry.rules) {
-                if (rule.customizationType !== WITProcessInterfaces.CustomizationType.System) {
+                if (!rule.isSystem) {
                     await this._importWITRule(rule, witRulesEntry, payload);
                 }
             }
@@ -394,26 +388,26 @@ class ProcessImporter {
     }
     async _importBehaviors(payload) {
         const behaviorsOnTarget = await Utilities_1.Utility.tryCatchWithKnownError(async () => {
-            return await Engine_1.Engine.Task(() => this._witProcessApi.getProcessBehaviors(payload.process.typeId), `Get behaviors on target account`);
+            return await Engine_1.Engine.Task(() => this._witProcessApi.getBehaviors(payload.process.typeId), `Get behaviors on target account`);
         }, () => new Errors_1.ImportError(`Failed to get behaviors on target account.`));
         const behaviorIdToRealNameBehavior = {};
         for (const behavior of payload.behaviors) {
             try {
-                const existing = behaviorsOnTarget.some(b => b.referenceName === behavior.referenceName);
+                const existing = behaviorsOnTarget.some(b => b.id === behavior.id);
                 if (!existing) {
                     const createBehavior = Utilities_1.Utility.toCreateBehavior(behavior);
-                    behaviorIdToRealNameBehavior[behavior.referenceName] = Utilities_1.Utility.toReplaceBehavior(behavior);
+                    behaviorIdToRealNameBehavior[behavior.id] = Utilities_1.Utility.toReplaceBehavior(behavior);
                     createBehavior.name = Utilities_1.Utility.createGuidWithoutHyphen();
-                    const createdBehavior = await Engine_1.Engine.Task(() => this._witProcessDefinitionApi.createBehavior(createBehavior, payload.process.typeId), `Create behavior '${behavior.referenceName}' with fake name '${behavior.name}'`);
-                    if (!createdBehavior || createdBehavior.id !== behavior.referenceName) {
+                    const createdBehavior = await Engine_1.Engine.Task(() => this._witProcessDefinitionApi.createBehavior(createBehavior, payload.process.typeId), `Create behavior '${behavior.id}' with fake name '${behavior.name}'`);
+                    if (!createdBehavior || createdBehavior.id !== behavior.id) {
                         throw new Errors_1.ImportError(`Failed to create behavior '${behavior.name}', server returned empty result or id does not match.`);
                     }
                 }
                 else {
                     const replaceBehavior = Utilities_1.Utility.toReplaceBehavior(behavior);
-                    behaviorIdToRealNameBehavior[behavior.referenceName] = Utilities_1.Utility.toReplaceBehavior(behavior);
+                    behaviorIdToRealNameBehavior[behavior.id] = Utilities_1.Utility.toReplaceBehavior(behavior);
                     replaceBehavior.name = Utilities_1.Utility.createGuidWithoutHyphen();
-                    const replacedBehavior = await Engine_1.Engine.Task(() => this._witProcessDefinitionApi.replaceBehavior(replaceBehavior, payload.process.typeId, behavior.referenceName), `Replace behavior '${behavior.referenceName}' with fake name '${behavior.name}'`);
+                    const replacedBehavior = await Engine_1.Engine.Task(() => this._witProcessDefinitionApi.replaceBehavior(replaceBehavior, payload.process.typeId, behavior.id), `Replace behavior '${behavior.id}' with fake name '${behavior.name}'`);
                     if (!replacedBehavior) {
                         throw new Errors_1.ImportError(`Failed to replace behavior '${behavior.name}', server returned empty result.`);
                     }
@@ -511,14 +505,14 @@ class ProcessImporter {
         await Engine_1.Engine.Task(() => this._addBehaviorsToWorkItemTypes(payload), "Add behavior to work item types on target process");
     }
     async _validateProcess(payload) {
-        if (payload.process.customizationType !== WITProcessInterfaces.CustomizationType.Inherited) {
+        if (payload.process.properties.class != WITProcessInterfaces.ProcessClass.Derived) {
             throw new Errors_1.ValidationError("Only inherited process is supported to be imported.");
         }
         const targetProcesses = await Utilities_1.Utility.tryCatchWithKnownError(async () => {
-            return await Engine_1.Engine.Task(() => this._witProcessApi.getListOfProcesses(), `Get processes on target account`);
-        }, () => new Errors_1.ValidationError("Failed to get processes on target account, check account url, token and token permissions."));
+            return await Engine_1.Engine.Task(() => this._witProcessApi.getProcesses(), `Get processes on target account`);
+        }, () => new Errors_1.ValidationError("Failed to get processes on target acccount, check account url, token and token permission."));
         if (!targetProcesses) {
-            throw new Errors_1.ValidationError("Failed to get processes on target account, check account url.");
+            throw new Errors_1.ValidationError("Failed to get processes on target acccount, check account url.");
         }
         for (const process of targetProcesses) {
             if (payload.process.name.toLowerCase() === process.name.toLowerCase()) {
@@ -636,14 +630,14 @@ class ProcessImporter {
         }
     }
     async _deleteProcessOnTarget(targetProcessName) {
-        const processes = await this._witProcessApi.getListOfProcesses();
+        const processes = await this._witProcessApi.getProcesses();
         for (const process of processes.filter(p => p.name.toLocaleLowerCase() === targetProcessName.toLocaleLowerCase())) {
-            await Utilities_1.Utility.tryCatchWithKnownError(async () => await Engine_1.Engine.Task(() => this._witProcessApi.deleteProcessById(process.typeId), `Delete process '${process.name}' on target account`), () => new Errors_1.ImportError(`Failed to delete process on target, do you have projects created using that project?`));
+            await Utilities_1.Utility.tryCatchWithKnownError(async () => await Engine_1.Engine.Task(() => this._witProcessApi.deleteProcess(process.typeId), `Delete process '${process.name}' on target account`), () => new Errors_1.ImportError(`Failed to delete process on target, do you have projects created using that project?`));
         }
     }
     async _createProcess(payload) {
         const createProcessModel = Utilities_1.Utility.ProcessModelToCreateProcessModel(payload.process);
-        const createdProcess = await Engine_1.Engine.Task(() => this._witProcessApi.createNewProcess(createProcessModel), `Create process '${createProcessModel.name}'`);
+        const createdProcess = await Engine_1.Engine.Task(() => this._witProcessApi.createProcess(createProcessModel), `Create process '${createProcessModel.name}'`);
         if (!createdProcess) {
             throw new Errors_1.ImportError(`Failed to create process '${createProcessModel.name}' on target account.`);
         }

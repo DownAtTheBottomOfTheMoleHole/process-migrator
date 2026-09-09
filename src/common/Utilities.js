@@ -107,11 +107,11 @@ class Utility {
             }
         }
     }
-    static ProcessModelToCreateProcessModel(processInfo) {
+    static ProcessModelToCreateProcessModel(processModel) {
         const createModel = {
-            description: processInfo.description,
-            name: processInfo.name,
-            parentProcessTypeId: processInfo.parentProcessTypeId,
+            description: processModel.description,
+            name: processModel.name,
+            parentProcessTypeId: processModel.properties.parentProcessTypeId,
             referenceName: Utility.createGuidWithoutHyphen()
         };
         return createModel;
@@ -177,10 +177,10 @@ class Utility {
     static toCreateBehavior(behavior) {
         const createBehavior = {
             color: behavior.color,
-            inherits: behavior.inherits ? behavior.inherits.behaviorRefName : undefined,
+            inherits: behavior.inherits.id,
             name: behavior.name
         };
-        createBehavior.id = behavior.referenceName;
+        createBehavior.id = behavior.id;
         return createBehavior;
     }
     static toReplaceBehavior(behavior) {
